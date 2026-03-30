@@ -1,20 +1,27 @@
 //+------------------------------------------------------------------+
-//|                           Gradiente_MANUS_V1.5_CORRIGIDO.mq5   |
-//|                      Desenvolvido por gholive@gmail.com         |
-//|                      VERSÃO CORRIGIDA - Ordens A Favor          |
+//|                                              SLYBOT_GRIID_V1.mq5 |
+//|                                                 Slybot Automacoes |
+//|                                         https://www.slybot.com.br |
 //+------------------------------------------------------------------+
-#property copyright "Desenvolvido por gholive@gmail.com - VERSÃO CORRIGIDA"
-#property link      ""
+#property copyright "Slybot Sistemas de Automacao"
+#property link      "https://www.slybot.com.br"
 #property version   "1.53"
-#property description "Robô de Gradiente Dinâmico V1.5 CORRIGIDO - Grid a favor com reset - MODIFICADO PARA CONTA HEDGE - FIX: Trigger comparação int/string corrigida"
 #property strict
 
-// Inclusão de bibliotecas necessárias
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 #include <Trade\SymbolInfo.mqh>
 #include <Trade\AccountInfo.mqh>
 #include <Trade\OrderInfo.mqh>
+#include <JAson.mqh>
+
+#resource "\\Images\\slybot_final.bmp";
+
+string API_URL    = "https://slybot.com.br/wp-json/slybot/v1/validate";
+string API_SECRET = "SlyBot$SecureKey#2026!Xv8@Lm4^Qp7Zt2";
+
+datetime last_validation = 0;
+bool     license_valid   = false;
 
 // Enumerações
 enum ENUM_GRID_TYPE {
@@ -27,8 +34,9 @@ enum ENUM_TRIGGER_TYPE {
 };
 
 // Parâmetros de entrada
-input string InpComment = "Gradiente MANUS V1.5"; // Comentário
-input int InpMagicNumber = 123467;                 // Número Mágico
+input string LICENSE_KEY    = "";                  // Insira sua Licença
+input string InpComment     = "SLYBOT GRIID";      // Comentário
+input int    InpMagicNumber = 123467;              // Número Mágico
 
 // Parâmetros de Proteção
 input double InpStopLoss = 100000.0;       // Stop Loss da operação gatilho (pontos, 0 = desativado)
@@ -61,12 +69,6 @@ input ENUM_TIMEFRAMES mm_tempo_grafico     = PERIOD_CURRENT; // Tempo gráfico
 
 // Parâmetros de Gatilho
 input ENUM_TRIGGER_TYPE InpTriggerType = TRIGGER_STATS; // Tipo de Gatilho
-
-// Parâmetros do Painel Visual
-input color InpPanelColor = clrDarkBlue;   // Cor de fundo do painel
-input color InpTextColor = clrWhite;       // Cor do texto do painel
-input int InpPanelCorner = CORNER_LEFT_UPPER; // Canto do painel
-
 
 //--- Variáveis internas de mercado
 double g_fechaAnterior, g_precoEntradaC, g_precoEntradaV, g_precoAtual, g_fechamentoBarra, g_percentualQueda, g_percentualAlta, g_aberturaDia, g_loteFinal;
@@ -168,12 +170,26 @@ struct PANEL_INFO {
 
 PANEL_INFO panelInfo;
 
-// Nomes dos objetos do painel
-string panelName = "GradientePanel";
-string panelMinimizeButton = "GradientePanelMinimize";
-string panelBuyButton = "GradientePanelBuy";
-string panelSellButton = "GradientePanelSell";
-string panelCloseButton = "GradientePanelClose";
+// --- Licença ---
+string g_licensePlan       = "---";
+string g_licenseExpiration = "---";
+string g_licenseStatus     = "Validando...";
+color  g_licenseColor      = clrYellow;
+
+// --- Painel Premium ---
+#define PANEL_NAME         "GRIIDPanel"
+#define PANEL_HEADER_NAME  "GRIIDHeader"
+#define PANEL_BODY_NAME    "GRIIDBody"
+#define BTN_COLLAPSE       "GRIID_COLLAPSE"
+#define PANEL_WIDTH        360
+#define PANEL_HEADER_HEIGHT 40
+#define PANEL_BODY_HEIGHT   300
+#define PANEL_CORNER        CORNER_LEFT_UPPER
+
+bool g_panelCollapsed = false;
+bool g_botLigado      = true;
+int  lineY = 0;
+int  lineHeight = 16;
 
 
 //+------------------------------------------------------------------+
@@ -279,7 +295,20 @@ bool IsTimeEqual(string timeStr) {
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
+int GetPanelHeight()
+{
+   return g_panelCollapsed ? PANEL_HEADER_HEIGHT : PANEL_HEADER_HEIGHT + PANEL_BODY_HEIGHT;
+}
+
 int OnInit() {
+   Print("=== INICIANDO SLYBOT GRIID ===");
+
+   license_valid   = ValidateLicense();
+   last_validation = TimeCurrent();
+   if(!license_valid) Print("Licença inválida. Robô não irá operar.");
+
+   EventSetTimer(1);
+
    PrintFormat("--- DIAGNÓSTICO TP --- Verificando StopLevel para %s...", _Symbol);
    long stopLevelLong = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
    if(stopLevelLong < 0) {
@@ -325,7 +354,10 @@ int OnInit() {
    AtualizarDadosDoMercado();
    CalcularPrecosDeEntrada();
 
-   CreatePanel();
+   RemoverPainel();
+   CriarPainel();
+   AtualizarPainel(TIME_INACTIVE);
+
    CalculateDailyProfit();
    CalculateWeeklyProfit();
    CalculateMonthlyProfit();
@@ -333,7 +365,7 @@ int OnInit() {
    if(InpSwingTradeMode)
       Print("MODO SWING TRADE ATIVADO - Horários de operação serão ignorados!");
 
-   Print("Gradiente MANUS V1.5 CORRIGIDO inicializado com sucesso! (v1.53 - Fix trigger)");
+   Print("SLYBOT GRIID inicializado com sucesso!");
    return INIT_SUCCEEDED;
 }
 
@@ -341,20 +373,41 @@ int OnInit() {
 //| Expert deinitialization function                                  |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason) {
+   EventKillTimer();
    if(bandHandle != INVALID_HANDLE) IndicatorRelease(bandHandle);
-   DeletePanel();
+   RemoverPainel();
    DeleteGridLines();
    if(manualBuyOrderTicket > 0)        trade.OrderDelete(manualBuyOrderTicket);
    if(manualSellOrderTicket > 0)       trade.OrderDelete(manualSellOrderTicket);
    if(gridAFavorOrderTicketBuy > 0)    trade.OrderDelete(gridAFavorOrderTicketBuy);
    if(gridAFavorOrderTicketSell > 0)   trade.OrderDelete(gridAFavorOrderTicketSell);
-   Print("Gradiente MANUS V1.5 CORRIGIDO finalizado. Motivo: ", reason);
+   Print("SLYBOT GRIID finalizado. Motivo: ", reason);
 }
 
 //+------------------------------------------------------------------+
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 void OnTick() {
+   // 🔒 Bloqueio de licença
+   if(!license_valid)
+   {
+      AtualizarPainel(TIME_INACTIVE);
+      return;
+   }
+   // 🔄 Revalidação a cada 20s
+   if(TimeCurrent() - last_validation > 20)
+   {
+      license_valid   = ValidateLicense();
+      last_validation = TimeCurrent();
+      if(!license_valid) { AtualizarPainel(TIME_INACTIVE); return; }
+   }
+   // 🔴 Power OFF
+   if(!g_botLigado)
+   {
+      AtualizarPainel(TIME_INACTIVE);
+      return;
+   }
+
    if(!robotEnabled) return;
 
    GerenciarHorarios();
@@ -391,16 +444,15 @@ void OnTick() {
    CalculateMonthlyProfit();
 
    if(dailyLimitReached) {
-      UpdatePanel(TIME_INACTIVE);
+      AtualizarPainel(TIME_INACTIVE);
       return;
    }
    if(CheckDailyLimits()) {
-      UpdatePanel(TIME_INACTIVE);
+      AtualizarPainel(TIME_INACTIVE);
       return;
    }
 
    ENUM_TIME_STATUS timeStatus = CheckTimeStatus();
-   UpdatePanel(timeStatus);
 
    if(!InpSwingTradeMode && timeStatus == TIME_CLOSE) {
       CloseAllPositions();
@@ -423,6 +475,8 @@ void OnTick() {
          UpdateAFavorLimitOrder();
       }
    }
+
+   AtualizarPainel(timeStatus);
 }
 
 
@@ -1372,260 +1426,348 @@ void CheckStatsTrigger() {
 
 
 //+------------------------------------------------------------------+
-//| Função para criar o painel visual                                 |
+//| PAINEL PREMIUM — mesmo conceito do STATS                         |
 //+------------------------------------------------------------------+
-void CreatePanel() {
-   DeletePanel();
-   int x = 20, y = 20, width = 220;
-   int height = panelMinimized ? 30 : 240;
+void CriarPainel()
+{
+   // PAINEL PRINCIPAL
+   ObjectCreate(0, PANEL_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_XDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_YDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_YSIZE, PANEL_HEADER_HEIGHT + PANEL_BODY_HEIGHT);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_FILL, true);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_BGCOLOR, C'18,22,35');
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_BORDER_COLOR, C'45,50,70');
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_SELECTABLE, false);
 
-   ObjectCreate(0, panelName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, panelName, OBJPROP_CORNER, InpPanelCorner);
-   ObjectSetInteger(0, panelName, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, panelName, OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0, panelName, OBJPROP_XSIZE, width);
-   ObjectSetInteger(0, panelName, OBJPROP_YSIZE, height);
-   ObjectSetInteger(0, panelName, OBJPROP_BGCOLOR, InpPanelColor);
-   ObjectSetInteger(0, panelName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0, panelName, OBJPROP_BORDER_COLOR, clrWhite);
-   ObjectSetInteger(0, panelName, OBJPROP_WIDTH, 1);
-   ObjectSetInteger(0, panelName, OBJPROP_BACK, false);
-   ObjectSetInteger(0, panelName, OBJPROP_SELECTABLE, false);
+   // HEADER
+   ObjectCreate(0, PANEL_HEADER_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_XDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_YDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_YSIZE, PANEL_HEADER_HEIGHT);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_FILL, true);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_BGCOLOR, C'8,12,22');
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_BORDER_COLOR, C'28,34,55');
 
-   ObjectCreate(0, panelMinimizeButton, OBJ_BUTTON, 0, 0, 0);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_CORNER, InpPanelCorner);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_XDISTANCE, x + width - 25);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_YDISTANCE, y + 5);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_XSIZE, 20);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_YSIZE, 20);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_BGCOLOR, InpPanelColor);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_BORDER_COLOR, clrWhite);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_COLOR, clrWhite);
-   ObjectSetString(0, panelMinimizeButton, OBJPROP_TEXT, panelMinimized ? "+" : "-");
-   ObjectSetString(0, panelMinimizeButton, OBJPROP_FONT, "Arial");
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_FONTSIZE, 12);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_SELECTABLE, true);
-   ObjectSetInteger(0, panelMinimizeButton, OBJPROP_STATE, false);
+   // LOGO
+   ObjectCreate(0, "SLYBOT_LOGO", OBJ_BITMAP_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_XDISTANCE, 15);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_YDISTANCE, 15);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_FILL, false);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_BGCOLOR, clrNONE);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
+   ObjectSetString(0, "SLYBOT_LOGO", OBJPROP_BMPFILE, "::Images\\slybot_final.bmp");
 
-   if(panelMinimized) {
-      CreatePanelLabel(0, x + 10, y + 8, "Gradiente MANUS V1.5 - Status...", InpTextColor, 8, width - 40);
-   } else {
-      int buttonY = y + height - 35, buttonWidth = 60, buttonSpacing = 5;
+   // Título
+   ObjectCreate(0, "LBL_TITLE", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_XDISTANCE, 150);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_FONTSIZE, 13);
+   ObjectSetString(0, "LBL_TITLE", OBJPROP_TEXT, "GRIID v1.53");
 
-      ObjectCreate(0, panelBuyButton, OBJ_BUTTON, 0, 0, 0);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_CORNER, InpPanelCorner);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_XDISTANCE, x + 10);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_YDISTANCE, buttonY);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_XSIZE, buttonWidth);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_YSIZE, 30);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_BGCOLOR, clrGreen);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_BORDER_COLOR, clrWhite);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_COLOR, clrWhite);
-      ObjectSetString(0, panelBuyButton, OBJPROP_TEXT, "COMPRAR");
-      ObjectSetString(0, panelBuyButton, OBJPROP_FONT, "Arial");
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_FONTSIZE, 8);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_SELECTABLE, true);
-      ObjectSetInteger(0, panelBuyButton, OBJPROP_STATE, false);
+   // Resultado no header (colapsado)
+   ObjectCreate(0, "LBL_RESULTADO_DIA", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_XDISTANCE, 220);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_YDISTANCE, 22);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_FONTSIZE, 10);
+   ObjectSetString(0, "LBL_RESULTADO_DIA", OBJPROP_TEXT, "");
 
-      ObjectCreate(0, panelSellButton, OBJ_BUTTON, 0, 0, 0);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_CORNER, InpPanelCorner);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_XDISTANCE, x + 10 + buttonWidth + buttonSpacing);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_YDISTANCE, buttonY);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_XSIZE, buttonWidth);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_YSIZE, 30);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_BGCOLOR, clrRed);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_BORDER_COLOR, clrWhite);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_COLOR, clrWhite);
-      ObjectSetString(0, panelSellButton, OBJPROP_TEXT, "VENDER");
-      ObjectSetString(0, panelSellButton, OBJPROP_FONT, "Arial");
-      ObjectSetInteger(0, panelSellButton, OBJPROP_FONTSIZE, 8);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_SELECTABLE, true);
-      ObjectSetInteger(0, panelSellButton, OBJPROP_STATE, false);
+   // BOTÃO COLLAPSE
+   ObjectCreate(0, BTN_COLLAPSE, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_XDISTANCE, PANEL_WIDTH - 25);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_FONTSIZE, 12);
+   ObjectSetString(0, BTN_COLLAPSE, OBJPROP_TEXT, "▼");
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_SELECTABLE, true);
 
-      ObjectCreate(0, panelCloseButton, OBJ_BUTTON, 0, 0, 0);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_CORNER, InpPanelCorner);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_XDISTANCE, x + 10 + 2 * (buttonWidth + buttonSpacing));
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_YDISTANCE, buttonY);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_XSIZE, buttonWidth);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_YSIZE, 30);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_BGCOLOR, clrDarkGray);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_BORDER_COLOR, clrWhite);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_COLOR, clrWhite);
-      ObjectSetString(0, panelCloseButton, OBJPROP_TEXT, "ZERAR");
-      ObjectSetString(0, panelCloseButton, OBJPROP_FONT, "Arial");
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_FONTSIZE, 8);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_SELECTABLE, true);
-      ObjectSetInteger(0, panelCloseButton, OBJPROP_STATE, false);
-   }
+   // BOTÃO POWER
+   ObjectCreate(0, "BTN_POWER_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_XDISTANCE, PANEL_WIDTH - 80);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_XSIZE, 40);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_YSIZE, 20);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_FILL, true);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_BGCOLOR, clrLime);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_BORDER_COLOR, clrLime);
+   ObjectCreate(0, "BTN_POWER_TXT", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_XDISTANCE, PANEL_WIDTH - 77);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_YDISTANCE, 22);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_COLOR, clrBlack);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_FONTSIZE, 10);
+   ObjectSetString(0, "BTN_POWER_TXT", OBJPROP_TEXT, "ON");
+
+   // BODY
+   ObjectCreate(0, PANEL_BODY_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_XDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YDISTANCE, 10 + PANEL_HEADER_HEIGHT);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YSIZE, PANEL_BODY_HEIGHT);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_FILL, true);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_BGCOLOR, C'20,26,45');
+
+   // LINHAS DO BODY
+   int baseY = 10 + PANEL_HEADER_HEIGHT + 15;
+   lineY = baseY;
+   lineHeight = 16;
+
+   CriarLinhaBody("LBL_PLANO",   "Plano: ---",  25);
+   CriarLinhaBody("LBL_STATUS",  "Status: ---", 25);
+   CriarLinhaBody("LBL_EXPIRA",  "Expira: ---", 25);
+   lineY += 8;
+   CriarLinhaBody("LBL_ATIVO",   "Ativo: ---",  25);
+   CriarLinhaBody("LBL_GRID",    "Grid: ---",   25);
+   lineY += 8;
+   CriarLinhaBody("LBL_STATUS_OP", "Op: ---",   25);
+   CriarLinhaBody("LBL_HORA",    "Hora: ---",   25);
+
+   // CARDS
+   int cardY      = lineY + 10;
+   int margem     = 15;
+   int espaco     = 6;
+   int larguraCard = (PANEL_WIDTH - (margem * 2) - (espaco * 3)) / 4;
+   int alturaCard  = 42;
+
+   CriarCard("CARD_ABERTO_BG", "CARD_ABERTO_TIT", "CARD_ABERTO_VAL", "ABERTO",
+             margem, cardY, larguraCard, alturaCard);
+   CriarCard("CARD_DIA_BG", "CARD_DIA_TIT", "CARD_DIA_VAL", "DIA",
+             margem + larguraCard + espaco, cardY, larguraCard, alturaCard);
+   CriarCard("CARD_SEMANA_BG", "CARD_SEMANA_TIT", "CARD_SEMANA_VAL", "SEMANA",
+             margem + (larguraCard * 2) + (espaco * 2), cardY, larguraCard, alturaCard);
+   CriarCard("CARD_MES_BG", "CARD_MES_TIT", "CARD_MES_VAL", "MÊS",
+             margem + (larguraCard * 3) + (espaco * 3), cardY, larguraCard, alturaCard);
+
+   // BOTÃO FECHAR TUDO
+   ObjectCreate(0, "BTN_CLOSE_ALL_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_XDISTANCE, 20);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_YDISTANCE, cardY + alturaCard + 15);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_XSIZE, PANEL_WIDTH - 40);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_YSIZE, 28);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_FILL, true);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_BGCOLOR, C'150,20,20');
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_BORDER_COLOR, C'150,20,20');
+   ObjectCreate(0, "BTN_CLOSE_ALL_TXT", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_XDISTANCE, PANEL_WIDTH / 2);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_YDISTANCE, cardY + alturaCard + 29);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_ANCHOR, ANCHOR_CENTER);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, "BTN_CLOSE_ALL_TXT", OBJPROP_TEXT, "FECHAR TODAS OPERAÇÕES");
+
+   int alturaFinal = cardY + alturaCard + 70;
+   ObjectSetInteger(0, PANEL_NAME,      OBJPROP_YSIZE, alturaFinal);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YSIZE, alturaFinal - PANEL_HEADER_HEIGHT);
+
+   // Z-ORDER
+   ObjectSetInteger(0, PANEL_NAME,       OBJPROP_ZORDER, 0);
+   ObjectSetInteger(0, PANEL_BODY_NAME,  OBJPROP_ZORDER, 1);
+   ObjectSetInteger(0, PANEL_HEADER_NAME,OBJPROP_ZORDER, 2);
+   ObjectSetInteger(0, "SLYBOT_LOGO",    OBJPROP_ZORDER, 3);
+   ObjectSetInteger(0, "LBL_TITLE",      OBJPROP_ZORDER, 3);
+   ObjectSetInteger(0, BTN_COLLAPSE,     OBJPROP_ZORDER, 5);
+   ObjectSetInteger(0, "BTN_POWER_BG",   OBJPROP_ZORDER, 6);
+   ObjectSetInteger(0, "BTN_POWER_TXT",  OBJPROP_ZORDER, 7);
+
    ChartRedraw();
 }
 
-//+------------------------------------------------------------------+
-//| Função para atualizar o painel visual                             |
-//+------------------------------------------------------------------+
-void UpdatePanel(ENUM_TIME_STATUS timeStatus) {
-   if(panelMinimized) {
-      string quickStatus = "Gradiente MANUS V1.5";
-      if(InpSwingTradeMode) quickStatus += " [SWING]";
-      quickStatus += triggerPositionOpen ? " - OPERANDO" : " - AGUARDANDO";
-      CreatePanelLabel(0, 30, 28, quickStatus, InpTextColor, 8, 160);
-      ChartRedraw();
-      return;
-   }
+void CriarLabelBody(string nome, string texto, int x, int y, color cor, int tamanho = 10)
+{
+   ObjectCreate(0, nome, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, nome, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, nome, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, nome, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, nome, OBJPROP_COLOR, cor);
+   ObjectSetInteger(0, nome, OBJPROP_FONTSIZE, tamanho);
+   ObjectSetString(0, nome, OBJPROP_TEXT, texto);
+}
 
-   panelInfo.symbol       = _Symbol;
-   panelInfo.currentPrice = symbolInfo.Last();
-   panelInfo.dailyProfit  = dailyProfit;
-   panelInfo.weeklyProfit = weeklyProfit;
-   panelInfo.monthlyProfit = monthlyProfit;
-   panelInfo.totalTrades  = totalTrades;
+void CriarLinhaBody(string nome, string texto, int x)
+{
+   CriarLabelBody(nome, texto, x, lineY, clrWhite, 9);
+   lineY += lineHeight;
+}
 
-   int activeTrades = 0;
-   double currentFloatingProfit = 0;
-   for(int i = 0; i < PositionsTotal(); i++) {
+void CriarCard(string nomeBg, string nomeTitulo, string nomeValor,
+               string titulo, int x, int y, int largura, int altura)
+{
+   ObjectCreate(0, nomeBg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, nomeBg, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, nomeBg, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, nomeBg, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, nomeBg, OBJPROP_XSIZE, largura);
+   ObjectSetInteger(0, nomeBg, OBJPROP_YSIZE, altura);
+   ObjectSetInteger(0, nomeBg, OBJPROP_FILL, true);
+   ObjectSetInteger(0, nomeBg, OBJPROP_BGCOLOR, C'35,45,75');
+   ObjectSetInteger(0, nomeBg, OBJPROP_BORDER_COLOR, C'35,45,75');
+   ObjectSetInteger(0, nomeBg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+
+   ObjectCreate(0, nomeTitulo, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_XDISTANCE, x + largura / 2);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_YDISTANCE, y + 10);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_ANCHOR, ANCHOR_CENTER);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_COLOR, clrSilver);
+   ObjectSetInteger(0, nomeTitulo, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, nomeTitulo, OBJPROP_TEXT, titulo);
+
+   ObjectCreate(0, nomeValor, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, nomeValor, OBJPROP_CORNER, PANEL_CORNER);
+   ObjectSetInteger(0, nomeValor, OBJPROP_XDISTANCE, x + largura / 2);
+   ObjectSetInteger(0, nomeValor, OBJPROP_YDISTANCE, (int)(y + altura * 0.62));
+   ObjectSetInteger(0, nomeValor, OBJPROP_ANCHOR, ANCHOR_CENTER);
+   ObjectSetInteger(0, nomeValor, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, nomeValor, OBJPROP_FONTSIZE, 11);
+   ObjectSetString(0, nomeValor, OBJPROP_TEXT, "0.00");
+}
+
+void AtualizarPainel(ENUM_TIME_STATUS timeStatus)
+{
+   if(ObjectFind(0, "LBL_PLANO") < 0) return;
+
+   // Flutuante
+   double aberto = 0;
+   for(int i = 0; i < PositionsTotal(); i++)
       if(positionInfo.SelectByIndex(i))
-         if(positionInfo.Symbol() == _Symbol && positionInfo.Magic() == InpMagicNumber) {
-            activeTrades++;
-            currentFloatingProfit += positionInfo.Profit() + positionInfo.Swap() + positionInfo.Commission();
-         }
-   }
-   panelInfo.activeTrades = activeTrades;
+         if(positionInfo.Symbol() == _Symbol && positionInfo.Magic() == InpMagicNumber)
+            aberto += positionInfo.Profit() + positionInfo.Swap() + positionInfo.Commission();
 
-   if(triggerPositionOpen) {
-      panelInfo.gridStatus = (InpGridType == GRID_FIXED) ? "Grid Fixo Ativo" : "Grid Dinâmico Ativo";
-      if(gridAFavorOrderTicketBuy > 0)  panelInfo.gridStatus += " (Ord C Fav)";
-      if(gridAFavorOrderTicketSell > 0) panelInfo.gridStatus += " (Ord V Fav)";
-   } else {
-      panelInfo.gridStatus = "Grid Inativo";
+   // Resultado no header colapsado
+   if(g_panelCollapsed)
+   {
+      string txt = "Hoje: " + DoubleToString(dailyProfit, 2);
+      ObjectSetString(0, "LBL_RESULTADO_DIA", OBJPROP_TEXT, txt);
+      ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_COLOR, dailyProfit >= 0 ? clrLime : clrTomato);
    }
+   else
+      ObjectSetString(0, "LBL_RESULTADO_DIA", OBJPROP_TEXT, "");
 
+   // Status da operação
+   string statusOp;
    if(dailyLimitReached)
-      panelInfo.triggerStatus = "LIMITE DIÁRIO ATINGIDO";
+      statusOp = "LIMITE DIÁRIO";
    else if(!InpSwingTradeMode && timeStatus == TIME_CLOSE)
-      panelInfo.triggerStatus = "HORÁRIO DE FECHAMENTO";
+      statusOp = "FECHAMENTO";
    else if(!InpSwingTradeMode && timeStatus == TIME_INACTIVE)
-      panelInfo.triggerStatus = "FORA DO HORÁRIO";
-   else if(triggerPositionOpen) {
-      panelInfo.triggerStatus = (triggerPositionType == POSITION_TYPE_BUY) ? "OPERANDO COMPRADO" : "OPERANDO VENDIDO";
-      if(InpSwingTradeMode) panelInfo.triggerStatus += " [SWING]";
-   } else {
-      panelInfo.triggerStatus = "Aguardando Gatilho (Porcentagem)";
-      if(InpSwingTradeMode) panelInfo.triggerStatus += " [SWING]";
-   }
+      statusOp = "FORA HORÁRIO";
+   else if(triggerPositionOpen)
+      statusOp = (triggerPositionType == POSITION_TYPE_BUY) ? "COMPRADO" : "VENDIDO";
+   else
+      statusOp = "Aguardando";
 
-   int labelX = 30, labelY = 30, labelSpacing = 15, panelWidth = 220;
+   string gridStatus = triggerPositionOpen
+      ? ((InpGridType == GRID_FIXED) ? "Fixo Ativo" : "Dinâmico Ativo")
+      : "Inativo";
 
-   CreatePanelLabel(0, labelX, labelY, "Gradiente MANUS V1.5 CORRIGIDO", InpTextColor, 10, panelWidth - labelX * 2);
-   labelY += labelSpacing + 5;
+   // Body labels
+   ObjectSetString(0, "LBL_PLANO",     OBJPROP_TEXT, "Plano: "   + g_licensePlan);
+   ObjectSetString(0, "LBL_STATUS",    OBJPROP_TEXT, "Status: "  + g_licenseStatus);
+   ObjectSetString(0, "LBL_EXPIRA",    OBJPROP_TEXT, "Expira: "  + g_licenseExpiration);
+   ObjectSetString(0, "LBL_ATIVO",     OBJPROP_TEXT, "Ativo: "   + _Symbol);
+   ObjectSetString(0, "LBL_GRID",      OBJPROP_TEXT, "Grid: "    + gridStatus);
+   ObjectSetString(0, "LBL_STATUS_OP", OBJPROP_TEXT, "Op: "      + statusOp);
+   ObjectSetString(0, "LBL_HORA",      OBJPROP_TEXT, "Hora: "    + TimeToString(TimeCurrent(), TIME_SECONDS));
+   ObjectSetInteger(0, "LBL_STATUS",   OBJPROP_COLOR, g_licenseColor);
 
-   color statusColor = clrWhite;
-   if(dailyLimitReached || (!InpSwingTradeMode && timeStatus == TIME_CLOSE)) statusColor = clrRed;
-   else if(!InpSwingTradeMode && timeStatus == TIME_INACTIVE) statusColor = clrGray;
-   else if(triggerPositionOpen) statusColor = clrOrange;
-   CreatePanelLabel(1, labelX, labelY, panelInfo.triggerStatus, statusColor, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
+   // Cards
+   ObjectSetString(0, "CARD_ABERTO_VAL", OBJPROP_TEXT, DoubleToString(aberto, 2));
+   ObjectSetString(0, "CARD_DIA_VAL",    OBJPROP_TEXT, DoubleToString(dailyProfit, 2));
+   ObjectSetString(0, "CARD_SEMANA_VAL", OBJPROP_TEXT, DoubleToString(weeklyProfit, 2));
+   ObjectSetString(0, "CARD_MES_VAL",    OBJPROP_TEXT, DoubleToString(monthlyProfit, 2));
 
-   CreatePanelLabel(2, labelX, labelY, "Resultado Dia: R$ " + DoubleToString(panelInfo.dailyProfit, 2),
-                    panelInfo.dailyProfit >= 0 ? clrLimeGreen : clrRed, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
+   ObjectSetInteger(0, "CARD_ABERTO_BG", OBJPROP_BGCOLOR, aberto        >= 0 ? C'0,110,60' : C'120,0,0');
+   ObjectSetInteger(0, "CARD_DIA_BG",    OBJPROP_BGCOLOR, dailyProfit   >= 0 ? C'0,110,60' : C'120,0,0');
+   ObjectSetInteger(0, "CARD_SEMANA_BG", OBJPROP_BGCOLOR, weeklyProfit  >= 0 ? C'0,110,60' : C'120,0,0');
+   ObjectSetInteger(0, "CARD_MES_BG",    OBJPROP_BGCOLOR, monthlyProfit >= 0 ? C'0,110,60' : C'120,0,0');
 
-   CreatePanelLabel(3, labelX, labelY, "Flutuante: R$ " + DoubleToString(currentFloatingProfit, 2),
-                    currentFloatingProfit >= 0 ? clrLimeGreen : clrRed, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
-
-   CreatePanelLabel(4, labelX, labelY, "Posições Abertas: " + IntegerToString(panelInfo.activeTrades), InpTextColor, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
-
-   CreatePanelLabel(5, labelX, labelY, "Grid: " + panelInfo.gridStatus, InpTextColor, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
-
-   if(triggerPositionOpen) {
-      CreatePanelLabel(6, labelX, labelY, "Ref. Grid: " + DoubleToString(triggerEntryPrice, _Digits), InpTextColor, 8, panelWidth - labelX * 2);
-      labelY += labelSpacing;
-   }
-
-   // Mostrar preços de entrada no painel
-   CreatePanelLabel(7, labelX, labelY,
-                    "Entrada C: " + DoubleToString(g_precoEntradaC, 0) +
-                    " | V: " + DoubleToString(g_precoEntradaV, 0),
-                    clrYellow, 8, panelWidth - labelX * 2);
-   labelY += labelSpacing;
-
-   CreatePanelLabel(8, labelX, labelY, "M#: " + IntegerToString(InpMagicNumber), clrDimGray, 8, panelWidth - labelX * 2);
    ChartRedraw();
 }
 
-//+------------------------------------------------------------------+
-//| Função para criar um label no painel                              |
-//+------------------------------------------------------------------+
-void CreatePanelLabel(int index, int x, int y, string text, color textColor, int fontSize, int width = 0) {
-   string labelName = "PanelLabel_" + IntegerToString(index);
-   ObjectCreate(0, labelName, OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, labelName, OBJPROP_CORNER, InpPanelCorner);
-   ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, labelName, OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0, labelName, OBJPROP_COLOR, textColor);
-   ObjectSetString(0, labelName, OBJPROP_TEXT, text);
-   ObjectSetString(0, labelName, OBJPROP_FONT, "Arial");
-   ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, fontSize);
-   ObjectSetInteger(0, labelName, OBJPROP_SELECTABLE, false);
-   if(width > 0) ObjectSetInteger(0, labelName, OBJPROP_XSIZE, width);
-}
-
-//+------------------------------------------------------------------+
-//| Função para remover o painel visual                               |
-//+------------------------------------------------------------------+
-void DeletePanel() {
-   ObjectDelete(0, panelName);
-   ObjectDelete(0, panelMinimizeButton);
-   ObjectDelete(0, panelBuyButton);
-   ObjectDelete(0, panelSellButton);
-   ObjectDelete(0, panelCloseButton);
-   ObjectsDeleteAll(0, "PanelLabel_");
-   ChartRedraw();
+void RemoverPainel()
+{
+   string objetos[] = {
+      PANEL_NAME, PANEL_HEADER_NAME, PANEL_BODY_NAME,
+      "SLYBOT_LOGO", "LBL_TITLE", "LBL_RESULTADO_DIA",
+      BTN_COLLAPSE, "BTN_POWER_BG", "BTN_POWER_TXT",
+      "LBL_PLANO", "LBL_STATUS", "LBL_EXPIRA",
+      "LBL_ATIVO", "LBL_GRID", "LBL_STATUS_OP", "LBL_HORA",
+      "CARD_ABERTO_BG", "CARD_ABERTO_TIT", "CARD_ABERTO_VAL",
+      "CARD_DIA_BG",    "CARD_DIA_TIT",    "CARD_DIA_VAL",
+      "CARD_SEMANA_BG", "CARD_SEMANA_TIT", "CARD_SEMANA_VAL",
+      "CARD_MES_BG",    "CARD_MES_TIT",    "CARD_MES_VAL",
+      "BTN_CLOSE_ALL_BG", "BTN_CLOSE_ALL_TXT"
+   };
+   for(int i = 0; i < ArraySize(objetos); i++)
+      if(ObjectFind(0, objetos[i]) >= 0) ObjectDelete(0, objetos[i]);
 }
 
 //+------------------------------------------------------------------+
 //| Função para processar cliques em objetos                          |
 //+------------------------------------------------------------------+
-void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam) {
-   if(id == CHARTEVENT_OBJECT_CLICK) {
-      if(sparam == panelMinimizeButton) {
-         panelMinimized = !panelMinimized;
-         CreatePanel();
-         return;
-      }
-      if(panelMinimized) return;
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   if(id != CHARTEVENT_OBJECT_CLICK) return;
 
-      if(sparam == panelBuyButton) {
-         ENUM_TIME_STATUS timeStatus = CheckTimeStatus();
-         if(!triggerPositionOpen && (InpSwingTradeMode || timeStatus == TIME_ACTIVE) && !dailyLimitReached) {
-            Print("Botão COMPRAR clicado.");
-            OpenTriggerPosition(POSITION_TYPE_BUY);
-         } else
-            Print("Botão COMPRAR ignorado (operação já aberta, fora de horário ou limite atingido).");
-         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-         ChartRedraw();
-         return;
-      }
-      if(sparam == panelSellButton) {
-         ENUM_TIME_STATUS timeStatus = CheckTimeStatus();
-         if(!triggerPositionOpen && (InpSwingTradeMode || timeStatus == TIME_ACTIVE) && !dailyLimitReached) {
-            Print("Botão VENDER clicado.");
-            OpenTriggerPosition(POSITION_TYPE_SELL);
-         } else
-            Print("Botão VENDER ignorado.");
-         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-         ChartRedraw();
-         return;
-      }
-      if(sparam == panelCloseButton) {
-         Print("Botão ZERAR clicado.");
-         CloseAllPositions();
-         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-         ChartRedraw();
-         return;
-      }
+   // COLLAPSE
+   if(sparam == BTN_COLLAPSE)
+   {
+      g_panelCollapsed = !g_panelCollapsed;
+      ObjectSetString(0, BTN_COLLAPSE, OBJPROP_TEXT, g_panelCollapsed ? ">" : "▼");
+      ObjectSetInteger(0, PANEL_NAME, OBJPROP_YSIZE, GetPanelHeight());
+
+      string objetosBody[] = {
+         PANEL_BODY_NAME,
+         "LBL_PLANO", "LBL_STATUS", "LBL_EXPIRA",
+         "LBL_ATIVO", "LBL_GRID", "LBL_STATUS_OP", "LBL_HORA",
+         "CARD_ABERTO_BG", "CARD_ABERTO_TIT", "CARD_ABERTO_VAL",
+         "CARD_DIA_BG",    "CARD_DIA_TIT",    "CARD_DIA_VAL",
+         "CARD_SEMANA_BG", "CARD_SEMANA_TIT", "CARD_SEMANA_VAL",
+         "CARD_MES_BG",    "CARD_MES_TIT",    "CARD_MES_VAL",
+         "BTN_CLOSE_ALL_BG", "BTN_CLOSE_ALL_TXT"
+      };
+      for(int i = 0; i < ArraySize(objetosBody); i++)
+         if(ObjectFind(0, objetosBody[i]) >= 0)
+            ObjectSetInteger(0, objetosBody[i], OBJPROP_TIMEFRAMES,
+                             g_panelCollapsed ? 0 : OBJ_ALL_PERIODS);
+      ChartRedraw();
+      return;
+   }
+
+   // POWER
+   if(sparam == "BTN_POWER_BG" || sparam == "BTN_POWER_TXT")
+   {
+      g_botLigado = !g_botLigado;
+      color bgColor = g_botLigado ? clrLime : clrRed;
+      ObjectSetInteger(0, "BTN_POWER_BG",  OBJPROP_BGCOLOR, bgColor);
+      ObjectSetInteger(0, "BTN_POWER_BG",  OBJPROP_BORDER_COLOR, bgColor);
+      ObjectSetString(0,  "BTN_POWER_TXT", OBJPROP_TEXT, g_botLigado ? "ON" : "OFF");
+      ChartRedraw();
+      return;
+   }
+
+   // FECHAR TUDO
+   if(sparam == "BTN_CLOSE_ALL_BG" || sparam == "BTN_CLOSE_ALL_TXT")
+   {
+      Print("Botão FECHAR TUDO acionado.");
+      CloseAllPositions();
+      ChartRedraw();
+      return;
    }
 }
 
@@ -1702,4 +1844,79 @@ void DesenharLinhas() {
    ObjectSetString(0, "LinhaPercentualAlta", OBJPROP_TEXT, "Compra: " + DoubleToString(g_precoEntradaC, _Digits));
 
    ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Validação de Licença                                             |
+//+------------------------------------------------------------------+
+bool ValidateLicense()
+{
+   if(MQLInfoInteger(MQL_TESTER))
+   {
+      g_licenseStatus = "TEST MODE";
+      g_licenseColor  = clrAqua;
+      return true;
+   }
+
+   if(StringLen(LICENSE_KEY) < 10)
+   {
+      g_licensePlan       = "---";
+      g_licenseExpiration = "---";
+      g_licenseStatus     = "Insira sua licença";
+      g_licenseColor      = clrOrange;
+      return false;
+   }
+
+   string json =
+      "{"
+      "\"mt5_login\":\""  + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\","
+      "\"server\":\""     + AccountInfoString(ACCOUNT_SERVER)  + "\","
+      "\"license_key\":\"" + LICENSE_KEY + "\","
+      "\"broker\":\""     + AccountInfoString(ACCOUNT_COMPANY) + "\","
+      "\"secret\":\""     + API_SECRET + "\""
+      "}";
+
+   char post[];
+   int size = StringToCharArray(json, post, 0, StringLen(json));
+   ArrayResize(post, size);
+
+   string headers = "Content-Type: application/json\r\n";
+   char result[];
+   int res = WebRequest("POST", API_URL, headers, 5000, post, result, headers);
+
+   if(res == -1)
+   {
+      g_licensePlan       = "---";
+      g_licenseExpiration = "---";
+      g_licenseStatus     = "Servidor offline";
+      g_licenseColor      = clrRed;
+      return false;
+   }
+
+   string response = CharArrayToString(result);
+   CJAVal data;
+   if(!data.Deserialize(response)) { Print("Erro ao interpretar JSON."); return false; }
+
+   bool valid = data["valid"].ToBool();
+   if(!valid)
+   {
+      string reason = data["reason"].ToStr();
+      if(reason == "invalid_license")    reason = "Licença inválida";
+      else if(reason == "expired")       reason = "Licença expirada";
+      else if(reason == "account_not_allowed") reason = "Conta não autorizada";
+      else if(reason == "server_not_allowed")  reason = "Servidor não autorizado";
+      else if(reason == "license_blocked")     reason = "Licença bloqueada";
+      else if(reason == "not_found")           reason = "Licença não encontrada";
+      g_licensePlan       = "---";
+      g_licenseExpiration = "---";
+      g_licenseStatus     = reason;
+      g_licenseColor      = clrRed;
+      return false;
+   }
+
+   g_licensePlan       = data["plan"].ToStr();
+   g_licenseExpiration = data["expiration"].ToStr();
+   g_licenseStatus     = "✔ Ativa";
+   g_licenseColor      = clrLime;
+   return true;
 }
