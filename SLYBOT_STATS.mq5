@@ -58,15 +58,13 @@ input group " OPERAÇÃO DE QUEDA ------------------------------";
 input double       perc_queda              = 2.0;        // % de queda 
 input double       perc_loss_queda         = 2.0;        // % loss 
 input double       perc_gain_queda         = 2.0;        // % gain 
-input double       loss_queda              = 500;        // loss queda
-input double       gain_queda              = 500;        // gain queda
+
 
 input group " OPERAÇÃO DE ALTA ------------------------------";
 input double       perc_alta               = 2.0;         // % de alta 
 input double       perc_loss_alta          = 2.0;         // % loss
 input double       perc_gain_alta          = 2.0;         // % gain 
-input double       loss_alta               = 500;         // loss alta
-input double       gain_alta               = 500;         // gain alta
+
 
 input group "BREAKEVEN --------------------------------";
 input bool         USAR_BREAKEVEN          = false;       // Usar BREAKEVEN?
