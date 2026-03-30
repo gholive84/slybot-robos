@@ -35,57 +35,48 @@ enum Estrategia
    
 };
 
-enum Contexto
-{
-   ABERTURA,  // Abertura do dia   
-   DIA_ANTERIOR,   // Fechamento dia Anterior  
-   ATR, // Novo parametro ATR
-   MINIMA_MAXIMA_DIA // % em relação a minima e maxima do dia
-   
-};
-
 //--- Variáveis Input
-input string       LICENSE_KEY             = "";     // Insira sua Licença 
-input string       nome_estrategia         = "";     // Insira o nome da estrategia 
-//--- Variáveis Input
+input string       LICENSE_KEY             = "";     // Insira sua Licença
+input string       nome_estrategia         = "";     // Insira o nome da estrategia
 input group "Estratégias ------------------------------------";
-input Estrategia   estrategia              = COMPRA;     // Estratégia de Entrada 
-input Contexto     contexto                = ABERTURA;   // Referência para calcular %
-input bool         trade_unico             = true;       // Somente 1 trade por dia. Falso = compra e vende no mesmo dia 
+input Estrategia   estrategia              = COMPRA;     // Estratégia de Entrada
+input bool         trade_unico             = true;       // Somente 1 trade por dia. Falso = compra e vende no mesmo dia
 input int          max_posicoes_ativas     = 5;          // Número máximo de posições ativas permitido (Mesmo Magic Number)
 input bool         linhas                  = true;       // Desenhar linhas no Gráfico
 
-input group " OPERAÇÃO DE QUEDA ------------------------------";
-input double       perc_queda              = 2.0;        // % de queda 
-input double       perc_loss_queda         = 2.0;        // % loss 
-input double       perc_gain_queda         = 2.0;        // % gain 
-input double       loss_queda              = 500;        // loss queda
-input double       gain_queda              = 500;        // gain queda
+input group "ATR - CONFIGURAÇÃO ----------------------------";
+input ENUM_TIMEFRAMES ATR_Timeframe        = PERIOD_CURRENT; // Timeframe do ATR
+input int          ATR_Period              = 14;             // Periodo do ATR
 
-input group " OPERAÇÃO DE ALTA ------------------------------";
-input double       perc_alta               = 2.0;         // % de alta 
-input double       perc_loss_alta          = 2.0;         // % loss
-input double       perc_gain_alta          = 2.0;         // % gain 
-input double       loss_alta               = 500;         // loss alta
-input double       gain_alta               = 500;         // gain alta
+input group "ATR - ENTRADAS --------------------------------";
+input double       ATR_Entry_Alta          = 0.40;       // ATR entrada de alta
+input double       ATR_Entry_Queda         = 0.40;       // ATR entrada de queda
 
-input group "BREAKEVEN --------------------------------";
+input group "ATR - STOPS DE ALTA --------------------------";
+input double       ATR_SL_Alta             = 1.00;       // ATR stop de alta
+input double       ATR_TP_Alta             = 1.00;       // ATR gain de alta
+
+input group "ATR - STOPS DE QUEDA -------------------------";
+input double       ATR_SL_Queda            = 1.00;       // ATR stop de queda
+input double       ATR_TP_Queda            = 1.00;       // ATR gain de queda
+
+input group "BREAKEVEN ATR --------------------------------";
 input bool         USAR_BREAKEVEN          = false;       // Usar BREAKEVEN?
-input double       even_alta               = 500;         // BreakEven para alta em %
-input double       even_queda              = 500;         // BreakEven para queda em %
-input double       BE_SOBRA                = 0.0;         // Quantos pontos/centavos deixar de lucro ao ativar o BE
+input double       BE_ATR_Alta             = 0.50;        // ATR para ativar BE de alta
+input double       BE_ATR_Queda            = 0.50;        // ATR para ativar BE de queda
+input double       BE_SOBRA                = 0.0;         // Pontos/centavos de lucro ao ativar BE
 
-input group "TRAILLING --------------------------------";
-//--- TRAILING STOP ------------------------------
-input bool   USAR_TRAILING                 = false;       // Se Ativo, ignora BREAKEVEN
-input double trailing_alta                 = 200;         // distância fixa do SL em % ALTA
-input double trailing_queda                = 200;         // distância fixa do SL em % QUEDA
-input double TRAILING_START                = 200;         // distância mínima para iniciar o trailing em %
+input group "TRAILING ATR ---------------------------------";
+input bool         USAR_TRAILING           = false;       // Se Ativo, ignora BREAKEVEN
+input double       TRAILING_ATR_Alta       = 0.50;        // Trailing em ATR para alta
+input double       TRAILING_ATR_Queda      = 0.50;        // Trailing em ATR para queda
+input double       TRAILING_START_ATR      = 0.50;        // ATR mínimo para iniciar trailing
+
 
 input group "HORÁRIOS ---------------------------------------";
 input int          hora_entrada            = 900;         // A partir desse horario permite operar
 input int          hora_saida              = 1800;        // Horário de fechamento de ordens caso não atinja alvos
-input int          hora_limite             = 1600;        // Horário limite para ordens 
+input int          hora_limite             = 1600;        // Horário limite para ordens
 
 input group "Gestão de Risco --------------------------------";
 input double       SaldoInicial            = 1000.0;      // Saldo inicial para cálculo de lucro acumulado
@@ -94,16 +85,6 @@ input double       fator_lots              = 1.0;         // Fator de Lote por s
 input double       saldo_por_lots          = 1000;        // Gestão Automática | Saldo para cada Lote/Contrato
 input double       lots_maximo             = 1000;        // Lote Máximo ( "0" = desabilitado)
 input double       loss                    = 50000;       // Loss diário de segurança
-
-input group "Se contexto ATR --------------------------------";
-input double ATR_Multiplier_Entry = 0.40;      // X vezes ATR para sinal de rompimento
-input double ATR_Multiplier_TP    = 1.00;      // Take Profit = X * ATR
-input double ATR_Multiplier_SL    = 1.00;      // Stop Loss   = X * ATR
-input ENUM_TIMEFRAMES ATR_Timeframe = PERIOD_CURRENT; // Timeframe do ATR
-input int ATR_Period = 14; // Periodo do ATR
-input bool   BE_USAR_ATR            = false;     // Breakeven ATR
-input double BE_ATR_Multiplier      = 0.50;      // Quanto ATR andar para ativar BE
-
 
 input group "Parâmetros ------------------------------";
 input ENUM_TIMEFRAMES mm_tempo_grafico     = PERIOD_CURRENT; // Tempo gráfico
@@ -512,58 +493,14 @@ void AtualizarDadosDoMercado()
 
 void CalcularPrecosDeEntrada()
 {
-   // ---- CONTEXTO: ABERTURA ----
-   if (contexto == ABERTURA)
+   if(g_atr <= 0)
    {
-      g_precoEntradaC = g_aberturaDia * (1 + perc_alta / 100.0);
-      g_precoEntradaV = g_aberturaDia * (1 - perc_queda / 100.0);
+      Print("ATR inválido, não é possível calcular preços de entrada.");
+      return;
    }
 
-   // ---- CONTEXTO: DIA ANTERIOR ----
-   else if (contexto == DIA_ANTERIOR)
-   {
-      g_precoEntradaC = g_fechaAnterior * (1 + perc_alta / 100.0);
-      g_precoEntradaV = g_fechaAnterior * (1 - perc_queda / 100.0);
-   }
-
-   // ---- NOVO CONTEXTO: ATR ----
-   else if (contexto == ATR)
-   {
-      if(g_atr <= 0)
-      {
-         Print("ATR inválido, não é possível calcular preços de entrada.");
-         return;
-      }
-
-      // rompimento da abertura pelo ATR
-      g_precoEntradaC = g_aberturaDia + (g_atr * ATR_Multiplier_Entry);
-      g_precoEntradaV = g_aberturaDia - (g_atr * ATR_Multiplier_Entry);
-   }
-   
-    // ---- NOVO CONTEXTO: MINIMA MAXIA DIA ----
-   else if (contexto == MINIMA_MAXIMA_DIA)
-   {
-      
-
-      if(minima_dia < g_aberturaDia ){
-           
-          
-           g_precoEntradaC = minima_dia * (1 + perc_alta / 100.0);
-         } 
-         
-         
-        
-      if(maxima_dia > g_aberturaDia) {
-           g_precoEntradaV = maxima_dia * (1 - perc_queda / 100.0); 
-         } 
-      
-     
-   }
-   
-
-   
-
-   
+   g_precoEntradaC = g_aberturaDia + (g_atr * ATR_Entry_Alta);
+   g_precoEntradaV = g_aberturaDia - (g_atr * ATR_Entry_Queda);
 }
 
 
@@ -834,69 +771,25 @@ void ajustarStopLoss()
                double preco_gain = 0.0;
 
                // ===========================================================
-               //            NOVO BLOCO: SL/TP ATR
+               //             BLOCO ATR
                // ===========================================================
-               if (contexto == ATR)
+               if (g_atr <= 0)
                {
-                    if (g_atr <= 0)
-                    {
-                        Print("ATR inválido no ajustarStopLoss()");
-                        return;
-                    }
-
-                    double SL_Atr = g_atr * ATR_Multiplier_SL;
-                    double TP_Atr = g_atr * ATR_Multiplier_TP;
-
-                    if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra)
-                    {
-                        preco_loss = NormalizeDouble(precoExecucao - SL_Atr, _Digits);
-                        preco_gain = NormalizeDouble(precoExecucao + TP_Atr, _Digits);
-                        g_primeiroStopCompra = true;
-                    }
-                    else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda)
-                    {
-                        preco_loss = NormalizeDouble(precoExecucao + SL_Atr, _Digits);
-                        preco_gain = NormalizeDouble(precoExecucao - TP_Atr, _Digits);
-                        g_primeiroStopVenda = true;
-                    }
+                   Print("ATR inválido no ajustarStopLoss()");
+                   return;
                }
-               else
+
+               if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra)
                {
-                  // ===========================================================
-                  //             BLOCO PERCENTUAL (Atualizado)
-                  // ===========================================================
-                  if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra) 
-                  {
-                      // Define as porcentagens com base na estratégia
-                      double p_loss = (estrategia == COMPRA) ? perc_loss_queda : perc_loss_alta;
-                      double p_gain = (estrategia == COMPRA) ? perc_gain_queda : perc_gain_alta;
-
-                      // Calcula em % (Subtrai pro Loss, Soma pro Gain)
-                      preco_loss = precoExecucao * (1.0 - (p_loss / 100.0));
-                      preco_gain = precoExecucao * (1.0 + (p_gain / 100.0));
-
-                      // Arredonda para evitar rejeição da corretora
-                      preco_loss = NormalizeDouble(preco_loss, _Digits);
-                      preco_gain = NormalizeDouble(preco_gain, _Digits);
-
-                      g_primeiroStopCompra = true;
-                  }
-                  else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda) 
-                  {
-                      // Define as porcentagens com base na estratégia
-                      double p_loss = (estrategia == VENDA) ? perc_loss_alta : perc_loss_queda;
-                      double p_gain = (estrategia == VENDA) ? perc_gain_alta : perc_gain_queda;
-
-                      // Calcula em % (Soma pro Loss, Subtrai pro Gain)
-                      preco_loss = precoExecucao * (1.0 + (p_loss / 100.0));
-                      preco_gain = precoExecucao * (1.0 - (p_gain / 100.0));
-
-                      // Arredonda para evitar rejeição da corretora
-                      preco_loss = NormalizeDouble(preco_loss, _Digits);
-                      preco_gain = NormalizeDouble(preco_gain, _Digits);
-
-                      g_primeiroStopVenda = true;
-                  }
+                   preco_loss = NormalizeDouble(precoExecucao - (g_atr * ATR_SL_Alta), _Digits);
+                   preco_gain = NormalizeDouble(precoExecucao + (g_atr * ATR_TP_Alta), _Digits);
+                   g_primeiroStopCompra = true;
+               }
+               else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda)
+               {
+                   preco_loss = NormalizeDouble(precoExecucao + (g_atr * ATR_SL_Queda), _Digits);
+                   preco_gain = NormalizeDouble(precoExecucao - (g_atr * ATR_TP_Queda), _Digits);
+                   g_primeiroStopVenda = true;
                }
 
                // ===========================================================
@@ -1092,11 +985,10 @@ void StopEven()
          double slAtual = PositionGetDouble(POSITION_SL);
          long tipo = PositionGetInteger(POSITION_TYPE);
          
-         // Cálculo do gatilho em %
+         // Cálculo do gatilho em ATR
          if(tipo == POSITION_TYPE_BUY)
          {
-            double gatilhoBE = precoAbertura * (1.0 + (even_alta / 100.0));
-            // Se o preço atual for maior que o gatilho e o SL ainda estiver abaixo da abertura
+            double gatilhoBE = precoAbertura + (g_atr * BE_ATR_Alta);
             if(precoAtual >= gatilhoBE && (slAtual < precoAbertura || slAtual == 0))
             {
                double novoSL = NormalizeDouble(precoAbertura + (BE_SOBRA * _Point), _Digits);
@@ -1105,8 +997,7 @@ void StopEven()
          }
          else if(tipo == POSITION_TYPE_SELL)
          {
-            double gatilhoBE = precoAbertura * (1.0 - (even_queda / 100.0));
-            // Se o preço atual for menor que o gatilho e o SL ainda estiver acima da abertura
+            double gatilhoBE = precoAbertura - (g_atr * BE_ATR_Queda);
             if(precoAtual <= gatilhoBE && (slAtual > precoAbertura || slAtual == 0))
             {
                double novoSL = NormalizeDouble(precoAbertura - (BE_SOBRA * _Point), _Digits);
@@ -1137,16 +1028,14 @@ void GerenciarTrailingStop()
          
          if(tipo == POSITION_TYPE_BUY)
          {
-            // 1. Verificação do GATILHO (Start) em %
-            double gatilhoStart = precoAbertura * (1.0 + (TRAILING_START / 100.0));
-            
-            // Se o preço ainda não chegou no Start, pula para a próxima posição sem fazer nada
-            if(precoAtual < gatilhoStart) continue; 
+            // 1. Gatilho em ATR
+            double gatilhoStart = precoAbertura + (g_atr * TRAILING_START_ATR);
+            if(precoAtual < gatilhoStart) continue;
 
-            // 2. Cálculo da DISTÂNCIA (Trailing) em %
-            double novoSL = NormalizeDouble(precoAtual * (1.0 - (trailing_alta / 100.0)), _Digits);
-            
-            // 3. Só modifica se o novo SL for maior que o atual (sempre subindo)
+            // 2. Distância do trailing em ATR
+            double novoSL = NormalizeDouble(precoAtual - (g_atr * TRAILING_ATR_Alta), _Digits);
+
+            // 3. Só sobe o SL
             if(novoSL > slAtual || slAtual == 0)
             {
                if(!m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP)))
@@ -1155,16 +1044,14 @@ void GerenciarTrailingStop()
          }
          else if(tipo == POSITION_TYPE_SELL)
          {
-            // 1. Verificação do GATILHO (Start) em %
-            double gatilhoStart = precoAbertura * (1.0 - (TRAILING_START / 100.0));
-            
-            // Se o preço ainda não chegou no Start, pula
+            // 1. Gatilho em ATR
+            double gatilhoStart = precoAbertura - (g_atr * TRAILING_START_ATR);
             if(precoAtual > gatilhoStart) continue;
 
-            // 2. Cálculo da DISTÂNCIA (Trailing) em %
-            double novoSL = NormalizeDouble(precoAtual * (1.0 + (trailing_queda / 100.0)), _Digits);
-            
-            // 3. Só modifica se o novo SL for menor que o atual (sempre descendo)
+            // 2. Distância do trailing em ATR
+            double novoSL = NormalizeDouble(precoAtual + (g_atr * TRAILING_ATR_Queda), _Digits);
+
+            // 3. Só desce o SL
             if(novoSL < slAtual || slAtual == 0)
             {
                if(!m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP)))

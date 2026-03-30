@@ -37,11 +37,10 @@ enum Estrategia
 
 enum Contexto
 {
-   ABERTURA,  // Abertura do dia   
-   DIA_ANTERIOR,   // Fechamento dia Anterior  
-   ATR, // Novo parametro ATR
+   ABERTURA,        // Abertura do dia
+   DIA_ANTERIOR,    // Fechamento dia Anterior
    MINIMA_MAXIMA_DIA // % em relação a minima e maxima do dia
-   
+
 };
 
 //--- Variáveis Input
@@ -95,14 +94,6 @@ input double       saldo_por_lots          = 1000;        // Gestão Automática
 input double       lots_maximo             = 1000;        // Lote Máximo ( "0" = desabilitado)
 input double       loss                    = 50000;       // Loss diário de segurança
 
-input group "Se contexto ATR --------------------------------";
-input double ATR_Multiplier_Entry = 0.40;      // X vezes ATR para sinal de rompimento
-input double ATR_Multiplier_TP    = 1.00;      // Take Profit = X * ATR
-input double ATR_Multiplier_SL    = 1.00;      // Stop Loss   = X * ATR
-input ENUM_TIMEFRAMES ATR_Timeframe = PERIOD_CURRENT; // Timeframe do ATR
-input int ATR_Period = 14; // Periodo do ATR
-input bool   BE_USAR_ATR            = false;     // Breakeven ATR
-input double BE_ATR_Multiplier      = 0.50;      // Quanto ATR andar para ativar BE
 
 
 input group "Parâmetros ------------------------------";
@@ -130,10 +121,6 @@ color  g_licenseColor = clrYellow;
 
 
 
-int atrHandle = INVALID_HANDLE;
-int atrPeriod = 14;
-ENUM_TIMEFRAMES atrTF = PERIOD_M5;
-double g_atr = 0.0;
 
 
 bool g_fechouPorHorario = false;
@@ -222,12 +209,6 @@ void OnDeinit(const int reason)
 
    RemoverPainel();
 
-   if(atrHandle != INVALID_HANDLE)
-   {
-      IndicatorRelease(atrHandle);
-      atrHandle = INVALID_HANDLE;
-   }
-
    Print("SlyBot removido e painel apagado.");
 }
 
@@ -261,27 +242,10 @@ int OnInit()
    AtualizarPainel();
    
 
-   // Inicializa ATR corretamente
-   atrHandle = iATR(Symbol(), ATR_Timeframe, ATR_Period);
-   if(atrHandle == INVALID_HANDLE)
-   {
-      Print("ERRO: Falha ao criar handle do ATR");
-      return INIT_FAILED;
-   }
-
-   Print("ATR inicializado com sucesso!");
    return INIT_SUCCEEDED;
 }
 
 
-// --- função de leitura rápida
-double GetATR_Cached()
-{
-   if(atrHandle == INVALID_HANDLE) return -1;
-   double buf[];
-   if(CopyBuffer(atrHandle, 0, 0, 1, buf) != 1) return -1;
-   return buf[0];
-}
 
 //+------------------------------------------------------------------+
 //| Função OnTester                                                  |
@@ -339,14 +303,6 @@ void OnTick()
 
   
     
-  double atr = GetATR_Cached();
-
-// Só grava o ATR se for válido
-if(atr > 0)
-    g_atr = atr;
-
-// NÃO dar return aqui
-
    ResetarControleDiario();
 
    
@@ -526,21 +482,7 @@ void CalcularPrecosDeEntrada()
       g_precoEntradaV = g_fechaAnterior * (1 - perc_queda / 100.0);
    }
 
-   // ---- NOVO CONTEXTO: ATR ----
-   else if (contexto == ATR)
-   {
-      if(g_atr <= 0)
-      {
-         Print("ATR inválido, não é possível calcular preços de entrada.");
-         return;
-      }
-
-      // rompimento da abertura pelo ATR
-      g_precoEntradaC = g_aberturaDia + (g_atr * ATR_Multiplier_Entry);
-      g_precoEntradaV = g_aberturaDia - (g_atr * ATR_Multiplier_Entry);
-   }
-   
-    // ---- NOVO CONTEXTO: MINIMA MAXIA DIA ----
+   // ---- CONTEXTO: MINIMA MAXIA DIA ----
    else if (contexto == MINIMA_MAXIMA_DIA)
    {
       
@@ -834,69 +776,27 @@ void ajustarStopLoss()
                double preco_gain = 0.0;
 
                // ===========================================================
-               //            NOVO BLOCO: SL/TP ATR
+               //             BLOCO PERCENTUAL
                // ===========================================================
-               if (contexto == ATR)
+               if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra)
                {
-                    if (g_atr <= 0)
-                    {
-                        Print("ATR inválido no ajustarStopLoss()");
-                        return;
-                    }
+                   double p_loss = (estrategia == COMPRA) ? perc_loss_queda : perc_loss_alta;
+                   double p_gain = (estrategia == COMPRA) ? perc_gain_queda : perc_gain_alta;
 
-                    double SL_Atr = g_atr * ATR_Multiplier_SL;
-                    double TP_Atr = g_atr * ATR_Multiplier_TP;
+                   preco_loss = NormalizeDouble(precoExecucao * (1.0 - (p_loss / 100.0)), _Digits);
+                   preco_gain = NormalizeDouble(precoExecucao * (1.0 + (p_gain / 100.0)), _Digits);
 
-                    if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra)
-                    {
-                        preco_loss = NormalizeDouble(precoExecucao - SL_Atr, _Digits);
-                        preco_gain = NormalizeDouble(precoExecucao + TP_Atr, _Digits);
-                        g_primeiroStopCompra = true;
-                    }
-                    else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda)
-                    {
-                        preco_loss = NormalizeDouble(precoExecucao + SL_Atr, _Digits);
-                        preco_gain = NormalizeDouble(precoExecucao - TP_Atr, _Digits);
-                        g_primeiroStopVenda = true;
-                    }
+                   g_primeiroStopCompra = true;
                }
-               else
+               else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda)
                {
-                  // ===========================================================
-                  //             BLOCO PERCENTUAL (Atualizado)
-                  // ===========================================================
-                  if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra) 
-                  {
-                      // Define as porcentagens com base na estratégia
-                      double p_loss = (estrategia == COMPRA) ? perc_loss_queda : perc_loss_alta;
-                      double p_gain = (estrategia == COMPRA) ? perc_gain_queda : perc_gain_alta;
+                   double p_loss = (estrategia == VENDA) ? perc_loss_alta : perc_loss_queda;
+                   double p_gain = (estrategia == VENDA) ? perc_gain_alta : perc_gain_queda;
 
-                      // Calcula em % (Subtrai pro Loss, Soma pro Gain)
-                      preco_loss = precoExecucao * (1.0 - (p_loss / 100.0));
-                      preco_gain = precoExecucao * (1.0 + (p_gain / 100.0));
+                   preco_loss = NormalizeDouble(precoExecucao * (1.0 + (p_loss / 100.0)), _Digits);
+                   preco_gain = NormalizeDouble(precoExecucao * (1.0 - (p_gain / 100.0)), _Digits);
 
-                      // Arredonda para evitar rejeição da corretora
-                      preco_loss = NormalizeDouble(preco_loss, _Digits);
-                      preco_gain = NormalizeDouble(preco_gain, _Digits);
-
-                      g_primeiroStopCompra = true;
-                  }
-                  else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda) 
-                  {
-                      // Define as porcentagens com base na estratégia
-                      double p_loss = (estrategia == VENDA) ? perc_loss_alta : perc_loss_queda;
-                      double p_gain = (estrategia == VENDA) ? perc_gain_alta : perc_gain_queda;
-
-                      // Calcula em % (Soma pro Loss, Subtrai pro Gain)
-                      preco_loss = precoExecucao * (1.0 + (p_loss / 100.0));
-                      preco_gain = precoExecucao * (1.0 - (p_gain / 100.0));
-
-                      // Arredonda para evitar rejeição da corretora
-                      preco_loss = NormalizeDouble(preco_loss, _Digits);
-                      preco_gain = NormalizeDouble(preco_gain, _Digits);
-
-                      g_primeiroStopVenda = true;
-                  }
+                   g_primeiroStopVenda = true;
                }
 
                // ===========================================================
