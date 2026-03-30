@@ -1,0 +1,7 @@
+# Binários compilados — não versionar
+*.ex5
+*.ex4
+
+# Logs e temporários
+*.log
+*.tmp
