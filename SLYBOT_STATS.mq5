@@ -94,9 +94,12 @@ input double       loss                    = 50000;       // Loss diário de seg
 
 
 
+input group "Identificação -----------------------------------";
+input string nomeEstrategia = "";                  // Nome da Estratégia
+
 input group "Parâmetros ------------------------------";
 input ENUM_TIMEFRAMES mm_tempo_grafico     = PERIOD_CURRENT; // Tempo gráfico
-input ulong        magicNumber             = 121212;     // Magic Number
+input ulong        magicNumber             = 100003;     // Magic Number
 
 
 //--- Variáveis internas
@@ -1362,6 +1365,7 @@ void OnChartEvent(const int id,
    {
       PANEL_BODY_NAME,
 
+      "LBL_NOME_ESTRATEGIA",
       "LBL_PLANO",
       "LBL_STATUS",
       "LBL_EXPIRA",
@@ -1587,7 +1591,7 @@ void CriarPainel()
    ObjectCreate(0, PANEL_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, PANEL_NAME, OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, PANEL_NAME, OBJPROP_XDISTANCE, 10);
-   ObjectSetInteger(0, PANEL_NAME, OBJPROP_YDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_NAME, OBJPROP_YDISTANCE, 50);
    ObjectSetInteger(0, PANEL_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
    // altura inicial provisória
    ObjectSetInteger(0, PANEL_NAME, OBJPROP_YSIZE, PANEL_HEADER_HEIGHT + PANEL_BODY_HEIGHT);
@@ -1604,7 +1608,7 @@ void CriarPainel()
    ObjectCreate(0, PANEL_HEADER_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_XDISTANCE, 10);
-   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_YDISTANCE, 10);
+   ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_YDISTANCE, 50);
    ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
    ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_YSIZE, PANEL_HEADER_HEIGHT);
    ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_FILL, true);
@@ -1623,7 +1627,7 @@ ObjectSetInteger(0, PANEL_HEADER_NAME, OBJPROP_BORDER_COLOR, C'28,34,55');
    
    ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_XDISTANCE, 15);
-   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_YDISTANCE, 15);
+   ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_YDISTANCE, 55);
    
    ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_FILL, false);
 ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_BGCOLOR, clrNONE);
@@ -1639,7 +1643,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    ObjectCreate(0, "LBL_TITLE", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_XDISTANCE, 150);
-   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_YDISTANCE, 60);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_FONTSIZE, 13);
    ObjectSetString(0, "LBL_TITLE", OBJPROP_TEXT, "v1.0");
@@ -1651,7 +1655,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    
    ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_XDISTANCE, 220);
-   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_YDISTANCE, 22);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_YDISTANCE, 62);
    
    ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_FONTSIZE, 10);
@@ -1671,7 +1675,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
   ObjectCreate(0, BTN_COLLAPSE, OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_XDISTANCE, PANEL_WIDTH - 25);
-   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_YDISTANCE, 60);
    ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, BTN_COLLAPSE, OBJPROP_FONTSIZE, 12);
    ObjectSetString(0, BTN_COLLAPSE, OBJPROP_TEXT, "▼");
@@ -1683,7 +1687,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    ObjectCreate(0, "BTN_POWER_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_XDISTANCE, PANEL_WIDTH - 80);
-   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_YDISTANCE, 60);
    ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_XSIZE, 40);
    ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_YSIZE, 20);
    ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_FILL, true);
@@ -1693,7 +1697,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    ObjectCreate(0, "BTN_POWER_TXT", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_XDISTANCE, PANEL_WIDTH - 77);
-   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_YDISTANCE, 22);
+   ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_YDISTANCE, 62);
    ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_COLOR, clrBlack);
    ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_FONTSIZE, 10);
    ObjectSetString(0, "BTN_POWER_TXT", OBJPROP_TEXT, "ON");
@@ -1704,7 +1708,7 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    ObjectCreate(0, PANEL_BODY_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_CORNER, PANEL_CORNER);
    ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_XDISTANCE, 10);
-   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YDISTANCE, 10 + PANEL_HEADER_HEIGHT);
+   ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YDISTANCE, 50 + PANEL_HEADER_HEIGHT);
    ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_XSIZE, PANEL_WIDTH);
    ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_YSIZE, PANEL_BODY_HEIGHT);
    ObjectSetInteger(0, PANEL_BODY_NAME, OBJPROP_FILL, true);
@@ -1713,12 +1717,13 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    
    // ================= TEXTOS BODY =================
 
-  int baseY = 10 + PANEL_HEADER_HEIGHT + 15;
+  int baseY = 50 + PANEL_HEADER_HEIGHT + 15;
 
    lineY = baseY;
    lineHeight = 16;
    
    
+      CriarLinhaBody("LBL_NOME_ESTRATEGIA", "---", 25);
       CriarLinhaBody("LBL_PLANO",  "Plano: ---", 25);
       CriarLinhaBody("LBL_STATUS", "Status: ---", 25);
       CriarLinhaBody("LBL_EXPIRA", "Expira: ---", 25);
@@ -1813,8 +1818,22 @@ ObjectSetInteger(0, "BTN_POWER_BG", OBJPROP_ZORDER, 6);
 ObjectSetInteger(0, "BTN_POWER_TXT", OBJPROP_ZORDER, 7);
 ObjectSetInteger(0, "LBL_RESULTADO_DIA", OBJPROP_ZORDER, 6);
 ObjectSetInteger(0, "LBL_MINI_DASH", OBJPROP_ZORDER, 6);
-   
-              
+
+   // BACK = false → painel na frente dos elementos do gráfico
+   ObjectSetInteger(0, PANEL_NAME,         OBJPROP_BACK, false);
+   ObjectSetInteger(0, PANEL_HEADER_NAME,  OBJPROP_BACK, false);
+   ObjectSetInteger(0, PANEL_BODY_NAME,    OBJPROP_BACK, false);
+   ObjectSetInteger(0, "SLYBOT_LOGO",      OBJPROP_BACK, false);
+   ObjectSetInteger(0, "LBL_TITLE",        OBJPROP_BACK, false);
+   ObjectSetInteger(0, BTN_COLLAPSE,       OBJPROP_BACK, false);
+   ObjectSetInteger(0, "BTN_POWER_BG",     OBJPROP_BACK, false);
+   ObjectSetInteger(0, "BTN_POWER_TXT",    OBJPROP_BACK, false);
+   ObjectSetInteger(0, "LBL_RESULTADO_DIA",OBJPROP_BACK, false);
+   ObjectSetInteger(0, "LBL_MINI_DASH",    OBJPROP_BACK, false);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_BG", OBJPROP_BACK, false);
+   ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT",OBJPROP_BACK, false);
+
+
 
    ChartRedraw();
 }
@@ -1943,6 +1962,7 @@ else
    // =========================
    // TEXTOS BODY
    // =========================
+   ObjectSetString(0,"LBL_NOME_ESTRATEGIA", OBJPROP_TEXT, nomeEstrategia != "" ? nomeEstrategia : "---");
    ObjectSetString(0,"LBL_PLANO",  OBJPROP_TEXT, "Plano: "  + g_licensePlan);
    ObjectSetString(0,"LBL_STATUS", OBJPROP_TEXT, "Status: " + g_licenseStatus);
    ObjectSetString(0,"LBL_EXPIRA", OBJPROP_TEXT, "Expira: " + g_licenseExpiration);
@@ -2038,6 +2058,7 @@ void RemoverPainel()
       "BTN_POWER_BG",
       "BTN_POWER_TXT",
 
+      "LBL_NOME_ESTRATEGIA",
       "LBL_PLANO",
       "LBL_STATUS",
       "LBL_EXPIRA",
