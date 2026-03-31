@@ -44,29 +44,27 @@ input bool         trade_unico             = true;       // Somente 1 trade por 
 input int          max_posicoes_ativas     = 5;          // Número máximo de posições ativas permitido (Mesmo Magic Number)
 input bool         linhas                  = true;       // Desenhar linhas no Gráfico
 
-input group "ATR - CONFIGURAÇÃO ----------------------------";
+input group "ATR - Configuração ----------------------------";
 input ENUM_TIMEFRAMES ATR_Timeframe        = PERIOD_CURRENT; // Timeframe do ATR
 input int          ATR_Period              = 14;             // Periodo do ATR
 
-input group "ATR - ENTRADAS --------------------------------";
+input group " OPERAÇÃO DE ALTA ------------------------------";
 input double       ATR_Entry_Alta          = 0.40;       // ATR entrada de alta
-input double       ATR_Entry_Queda         = 0.40;       // ATR entrada de queda
-
-input group "ATR - STOPS DE ALTA --------------------------";
 input double       ATR_SL_Alta             = 1.00;       // ATR stop de alta
 input double       ATR_TP_Alta             = 1.00;       // ATR gain de alta
 
-input group "ATR - STOPS DE QUEDA -------------------------";
+input group " OPERAÇÃO DE QUEDA -----------------------------";
+input double       ATR_Entry_Queda         = 0.40;       // ATR entrada de queda
 input double       ATR_SL_Queda            = 1.00;       // ATR stop de queda
 input double       ATR_TP_Queda            = 1.00;       // ATR gain de queda
 
-input group "BREAKEVEN ATR --------------------------------";
+input group "BREAKEVEN --------------------------------";
 input bool         USAR_BREAKEVEN          = false;       // Usar BREAKEVEN?
 input double       BE_ATR_Alta             = 0.50;        // ATR para ativar BE de alta
 input double       BE_ATR_Queda            = 0.50;        // ATR para ativar BE de queda
 input double       BE_SOBRA                = 0.0;         // Pontos/centavos de lucro ao ativar BE
 
-input group "TRAILING ATR ---------------------------------";
+input group "TRAILLING --------------------------------";
 input bool         USAR_TRAILING           = false;       // Se Ativo, ignora BREAKEVEN
 input double       TRAILING_ATR_Alta       = 0.50;        // Trailing em ATR para alta
 input double       TRAILING_ATR_Queda      = 0.50;        // Trailing em ATR para queda

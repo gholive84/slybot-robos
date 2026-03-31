@@ -33,41 +33,43 @@ enum ENUM_TRIGGER_TYPE {
    TRIGGER_STATS = 0
 };
 
-// Parâmetros de entrada
 input string LICENSE_KEY    = "";                  // Insira sua Licença
+
+input group "Identificação -----------------------------------";
 input string InpComment     = "SLYBOT GRIID";      // Comentário
 input int    InpMagicNumber = 123467;              // Número Mágico
 
-// Parâmetros de Proteção
-input double InpStopLoss = 100000.0;       // Stop Loss da operação gatilho (pontos, 0 = desativado)
-input double InpTakeProfit = 100000.0;     // Take Profit da operação gatilho (pontos, 0 = desativado)
-input double InpDailyLossLimit = 1000.0;   // Limite de Loss Diário (R$)
+input group "Proteção Diária ---------------------------------";
+input double InpDailyLossLimit  = 1000.0;  // Limite de Loss Diário (R$)
 input double InpDailyProfitLimit = 2000.0; // Limite de Gain Diário (R$)
 
-// Parâmetros do Grid
+input group "Stop / Take da Ordem Gatilho --------------------";
+input double InpStopLoss   = 100000.0;     // Stop Loss do gatilho (pontos, 0 = desativado)
+input double InpTakeProfit = 100000.0;     // Take Profit do gatilho (pontos, 0 = desativado)
+
+input group "Grid --------------------------------------------";
 input ENUM_GRID_TYPE InpGridType = GRID_DYNAMIC; // Tipo de Grid
 input double InpGridInterval = 20000.0;    // Intervalo entre ordens do grid (pontos)
-input int InpGridLevels = 5;               // Quantidade de níveis do grid (contra)
+input int    InpGridLevels   = 5;          // Quantidade de níveis do grid (contra)
 input double InpContractCost = 0.20;       // Custo por contrato (R$)
-input bool InpShowGridLines = true;        // Mostrar linhas do grid no gráfico
+input bool   InpShowGridLines = true;      // Mostrar linhas do grid no gráfico
 
-// Parâmetros de Horário
-input string InpStartTime = "09:00";       // Horário de início
-input string InpEndTime = "17:00";         // Horário de término
-input string InpCloseTime = "17:30";       // Horário para fechar posições
-input bool InpSwingTradeMode = false;      // Modo Swing Trade (ignora horários de operação)
+input group "Horários ----------------------------------------";
+input string InpStartTime    = "09:00";    // Horário de início
+input string InpEndTime      = "17:00";    // Horário de término
+input string InpCloseTime    = "17:30";    // Horário para fechar posições
+input bool   InpSwingTradeMode = false;    // Modo Swing Trade (ignora horários)
 
-// Parâmetros de Volume
-input double InpLotSize = 1.0;             // Tamanho do lote fixo
-input double InpLotgatilho = 1.0;          // Tamanho do lote gatilho
+input group "Volume / Lotes ----------------------------------";
+input double InpLotgatilho = 1.0;          // Lote da ordem gatilho
+input double InpLotSize    = 1.0;          // Lote do grid
 
-// Parâmetros de Gatilho de Percentagem
-input bool         tendencia               = true;          // True = Favor da tendencia, false = Contra tendência
-input double       perc_alta               = 1.0;           // % de alta
-input double       perc_queda              = 1.0;           // % de queda
-input ENUM_TIMEFRAMES mm_tempo_grafico     = PERIOD_CURRENT; // Tempo gráfico
+input group "Gatilho % ---------------------------------------";
+input bool         tendencia           = true;          // true = a favor, false = contra tendência
+input double       perc_alta           = 1.0;           // % de alta para gatilho
+input double       perc_queda          = 1.0;           // % de queda para gatilho
+input ENUM_TIMEFRAMES mm_tempo_grafico = PERIOD_CURRENT; // Tempo gráfico do gatilho
 
-// Parâmetros de Gatilho
 input ENUM_TRIGGER_TYPE InpTriggerType = TRIGGER_STATS; // Tipo de Gatilho
 
 //--- Variáveis internas de mercado
@@ -635,14 +637,63 @@ void CalculateDailyProfit() {
    dailyProfit = realizedProfitToday + currentFloatingProfit;
 }
 
-void CalculateWeeklyProfit() {
-   if(isNewWeek) weeklyProfit = 0.0;
-   weeklyProfit = dailyProfit;
+void CalculateWeeklyProfit()
+{
+   double floating = 0;
+   for(int i = 0; i < PositionsTotal(); i++)
+      if(positionInfo.SelectByIndex(i))
+         if(positionInfo.Symbol() == _Symbol && positionInfo.Magic() == InpMagicNumber)
+            floating += positionInfo.Profit() + positionInfo.Swap() + positionInfo.Commission();
+
+   MqlDateTime now;
+   TimeToStruct(TimeCurrent(), now);
+   MqlDateTime ws = now;
+   ws.hour = 0; ws.min = 0; ws.sec = 0;
+   ws.day -= now.day_of_week; // retrocede até domingo
+   datetime weekStart = StructToTime(ws);
+
+   double realized = 0;
+   if(HistorySelect(weekStart, TimeCurrent()))
+      for(int i = 0; i < HistoryDealsTotal(); i++)
+      {
+         ulong ticket = HistoryDealGetTicket(i);
+         if(HistoryDealGetInteger(ticket, DEAL_MAGIC)  == InpMagicNumber &&
+            HistoryDealGetString(ticket,  DEAL_SYMBOL) == _Symbol &&
+            HistoryDealGetInteger(ticket, DEAL_ENTRY)  == DEAL_ENTRY_OUT)
+            realized += HistoryDealGetDouble(ticket, DEAL_PROFIT)     +
+                        HistoryDealGetDouble(ticket, DEAL_SWAP)       +
+                        HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      }
+   weeklyProfit = realized + floating;
 }
 
-void CalculateMonthlyProfit() {
-   if(isNewMonth) monthlyProfit = 0.0;
-   monthlyProfit = dailyProfit;
+void CalculateMonthlyProfit()
+{
+   double floating = 0;
+   for(int i = 0; i < PositionsTotal(); i++)
+      if(positionInfo.SelectByIndex(i))
+         if(positionInfo.Symbol() == _Symbol && positionInfo.Magic() == InpMagicNumber)
+            floating += positionInfo.Profit() + positionInfo.Swap() + positionInfo.Commission();
+
+   MqlDateTime now;
+   TimeToStruct(TimeCurrent(), now);
+   MqlDateTime ms = now;
+   ms.day = 1; ms.hour = 0; ms.min = 0; ms.sec = 0;
+   datetime monthStart = StructToTime(ms);
+
+   double realized = 0;
+   if(HistorySelect(monthStart, TimeCurrent()))
+      for(int i = 0; i < HistoryDealsTotal(); i++)
+      {
+         ulong ticket = HistoryDealGetTicket(i);
+         if(HistoryDealGetInteger(ticket, DEAL_MAGIC)  == InpMagicNumber &&
+            HistoryDealGetString(ticket,  DEAL_SYMBOL) == _Symbol &&
+            HistoryDealGetInteger(ticket, DEAL_ENTRY)  == DEAL_ENTRY_OUT)
+            realized += HistoryDealGetDouble(ticket, DEAL_PROFIT)     +
+                        HistoryDealGetDouble(ticket, DEAL_SWAP)       +
+                        HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      }
+   monthlyProfit = realized + floating;
 }
 
 //+------------------------------------------------------------------+
@@ -1568,7 +1619,7 @@ void CriarPainel()
    ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_ANCHOR, ANCHOR_CENTER);
    ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, "BTN_CLOSE_ALL_TXT", OBJPROP_FONTSIZE, 9);
-   ObjectSetString(0, "BTN_CLOSE_ALL_TXT", OBJPROP_TEXT, "FECHAR TODAS OPERAÇÕES");
+   ObjectSetString(0, "BTN_CLOSE_ALL_TXT", OBJPROP_TEXT, "PARAR E FECHAR");
 
    int alturaFinal = cardY + alturaCard + 70;
    ObjectSetInteger(0, PANEL_NAME,      OBJPROP_YSIZE, alturaFinal);
@@ -1761,11 +1812,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    }
 
-   // FECHAR TUDO
+   // PARAR E FECHAR
    if(sparam == "BTN_CLOSE_ALL_BG" || sparam == "BTN_CLOSE_ALL_TXT")
    {
-      Print("Botão FECHAR TUDO acionado.");
+      Print("Botão PARAR E FECHAR acionado — encerrando operações e bloqueando o dia.");
       CloseAllPositions();
+      dailyLimitReached = true;
       ChartRedraw();
       return;
    }
