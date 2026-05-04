@@ -397,8 +397,8 @@ void OnTick() {
       AtualizarPainel(TIME_INACTIVE);
       return;
    }
-   // 🔄 Revalidação a cada 20s
-   if(TimeCurrent() - last_validation > 20)
+   // 🔄 Revalidação 1x por dia
+   if(TimeCurrent() - last_validation > 86400)
    {
       license_valid   = ValidateLicense();
       last_validation = TimeCurrent();
@@ -1975,6 +1975,13 @@ bool ValidateLicense()
       else if(reason == "server_not_allowed")  reason = "Servidor não autorizado";
       else if(reason == "license_blocked")     reason = "Licença bloqueada";
       else if(reason == "not_found")           reason = "Licença não encontrada";
+      else if(reason == "rate_limit")
+      {
+         Print("Rate limit atingido — mantendo licença válida até próxima verificação.");
+         g_licenseStatus = "✔ Ativa (rate limit)";
+         g_licenseColor  = clrYellow;
+         return license_valid;
+      }
       g_licensePlan       = "---";
       g_licenseExpiration = "---";
       g_licenseStatus     = reason;

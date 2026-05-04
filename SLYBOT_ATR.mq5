@@ -289,8 +289,8 @@ void OnTick()
       return;
    }
 
-   // 🔄 REVALIDAÇÃO A CADA 30 MIN
-   if(TimeCurrent() - last_validation > 20)
+   // 🔄 REVALIDAÇÃO 1X POR DIA
+   if(TimeCurrent() - last_validation > 86400)
    {
       license_valid = ValidateLicense();
       last_validation = TimeCurrent();
@@ -754,6 +754,14 @@ void GerenciarRiscoPosicoes()
 
 
 
+// Normaliza preço ao tick size do símbolo (ex: WIN exige múltiplos de 5)
+double NormalizarPreco(double preco)
+{
+    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    if(tickSize <= 0) tickSize = _Point;
+    return NormalizeDouble(MathRound(preco / tickSize) * tickSize, _Digits);
+}
+
 void ajustarStopLoss()
 {
    for (int i = 0; i < PositionsTotal(); i++)
@@ -782,14 +790,14 @@ void ajustarStopLoss()
 
                if (tipo == POSITION_TYPE_BUY && !g_primeiroStopCompra)
                {
-                   preco_loss = NormalizeDouble(precoExecucao - (g_atr * ATR_SL_Alta), _Digits);
-                   preco_gain = NormalizeDouble(precoExecucao + (g_atr * ATR_TP_Alta), _Digits);
+                   preco_loss = NormalizarPreco(precoExecucao - (g_atr * ATR_SL_Alta));
+                   preco_gain = NormalizarPreco(precoExecucao + (g_atr * ATR_TP_Alta));
                    g_primeiroStopCompra = true;
                }
                else if (tipo == POSITION_TYPE_SELL && !g_primeiroStopVenda)
                {
-                   preco_loss = NormalizeDouble(precoExecucao + (g_atr * ATR_SL_Queda), _Digits);
-                   preco_gain = NormalizeDouble(precoExecucao - (g_atr * ATR_TP_Queda), _Digits);
+                   preco_loss = NormalizarPreco(precoExecucao + (g_atr * ATR_SL_Queda));
+                   preco_gain = NormalizarPreco(precoExecucao - (g_atr * ATR_TP_Queda));
                    g_primeiroStopVenda = true;
                }
 
@@ -992,7 +1000,7 @@ void StopEven()
             double gatilhoBE = precoAbertura + (g_atr * BE_ATR_Alta);
             if(precoAtual >= gatilhoBE && (slAtual < precoAbertura || slAtual == 0))
             {
-               double novoSL = NormalizeDouble(precoAbertura + (BE_SOBRA * _Point), _Digits);
+               double novoSL = NormalizarPreco(precoAbertura + (BE_SOBRA * _Point));
                m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP));
             }
          }
@@ -1001,7 +1009,7 @@ void StopEven()
             double gatilhoBE = precoAbertura - (g_atr * BE_ATR_Queda);
             if(precoAtual <= gatilhoBE && (slAtual > precoAbertura || slAtual == 0))
             {
-               double novoSL = NormalizeDouble(precoAbertura - (BE_SOBRA * _Point), _Digits);
+               double novoSL = NormalizarPreco(precoAbertura - (BE_SOBRA * _Point));
                m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP));
             }
          }
@@ -1034,7 +1042,7 @@ void GerenciarTrailingStop()
             if(precoAtual < gatilhoStart) continue;
 
             // 2. Distância do trailing em ATR
-            double novoSL = NormalizeDouble(precoAtual - (g_atr * TRAILING_ATR_Alta), _Digits);
+            double novoSL = NormalizarPreco(precoAtual - (g_atr * TRAILING_ATR_Alta));
 
             // 3. Só sobe o SL
             if(novoSL > slAtual || slAtual == 0)
@@ -1050,7 +1058,7 @@ void GerenciarTrailingStop()
             if(precoAtual > gatilhoStart) continue;
 
             // 2. Distância do trailing em ATR
-            double novoSL = NormalizeDouble(precoAtual + (g_atr * TRAILING_ATR_Queda), _Digits);
+            double novoSL = NormalizarPreco(precoAtual + (g_atr * TRAILING_ATR_Queda));
 
             // 3. Só desce o SL
             if(novoSL < slAtual || slAtual == 0)
@@ -1530,6 +1538,16 @@ else if(reason == "invalid_key")
 
 else if(reason == "not_found")
    reason = "Licença não encontrada";
+
+else if(reason == "rate_limit")
+{
+   reason = "Limite de requisições";
+   // Rate limit: mantém a licença válida e aguarda próxima janela
+   Print("Rate limit atingido — mantendo licença válida até próxima verificação.");
+   g_licenseStatus = "✔ Ativa (rate limit)";
+   g_licenseColor  = clrYellow;
+   return license_valid; // mantém o estado anterior
+}
 
 // 🔹 Atualiza painel
 g_licensePlan = "---";

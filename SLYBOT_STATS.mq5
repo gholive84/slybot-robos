@@ -272,8 +272,8 @@ void OnTick()
       return;
    }
 
-   // 🔄 REVALIDAÇÃO A CADA 30 MIN
-   if(TimeCurrent() - last_validation > 20)
+   // 🔄 REVALIDAÇÃO 1X POR DIA
+   if(TimeCurrent() - last_validation > 86400)
    {
       license_valid = ValidateLicense();
       last_validation = TimeCurrent();
@@ -759,6 +759,14 @@ void GerenciarRiscoPosicoes()
 
 
 
+// Normaliza preço ao tick size do símbolo (ex: WIN exige múltiplos de 5)
+double NormalizarPreco(double preco)
+{
+    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    if(tickSize <= 0) tickSize = _Point;
+    return NormalizeDouble(MathRound(preco / tickSize) * tickSize, _Digits);
+}
+
 void ajustarStopLoss()
 {
    for (int i = 0; i < PositionsTotal(); i++)
@@ -784,8 +792,8 @@ void ajustarStopLoss()
                    double p_loss = (estrategia == COMPRA) ? perc_loss_queda : perc_loss_alta;
                    double p_gain = (estrategia == COMPRA) ? perc_gain_queda : perc_gain_alta;
 
-                   preco_loss = NormalizeDouble(precoExecucao * (1.0 - (p_loss / 100.0)), _Digits);
-                   preco_gain = NormalizeDouble(precoExecucao * (1.0 + (p_gain / 100.0)), _Digits);
+                   preco_loss = NormalizarPreco(precoExecucao * (1.0 - (p_loss / 100.0)));
+                   preco_gain = NormalizarPreco(precoExecucao * (1.0 + (p_gain / 100.0)));
 
                    g_primeiroStopCompra = true;
                }
@@ -794,8 +802,8 @@ void ajustarStopLoss()
                    double p_loss = (estrategia == VENDA) ? perc_loss_alta : perc_loss_queda;
                    double p_gain = (estrategia == VENDA) ? perc_gain_alta : perc_gain_queda;
 
-                   preco_loss = NormalizeDouble(precoExecucao * (1.0 + (p_loss / 100.0)), _Digits);
-                   preco_gain = NormalizeDouble(precoExecucao * (1.0 - (p_gain / 100.0)), _Digits);
+                   preco_loss = NormalizarPreco(precoExecucao * (1.0 + (p_loss / 100.0)));
+                   preco_gain = NormalizarPreco(precoExecucao * (1.0 - (p_gain / 100.0)));
 
                    g_primeiroStopVenda = true;
                }
@@ -1000,7 +1008,7 @@ void StopEven()
             // Se o preço atual for maior que o gatilho e o SL ainda estiver abaixo da abertura
             if(precoAtual >= gatilhoBE && (slAtual < precoAbertura || slAtual == 0))
             {
-               double novoSL = NormalizeDouble(precoAbertura + (BE_SOBRA * _Point), _Digits);
+               double novoSL = NormalizarPreco(precoAbertura + (BE_SOBRA * _Point));
                m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP));
             }
          }
@@ -1010,7 +1018,7 @@ void StopEven()
             // Se o preço atual for menor que o gatilho e o SL ainda estiver acima da abertura
             if(precoAtual <= gatilhoBE && (slAtual > precoAbertura || slAtual == 0))
             {
-               double novoSL = NormalizeDouble(precoAbertura - (BE_SOBRA * _Point), _Digits);
+               double novoSL = NormalizarPreco(precoAbertura - (BE_SOBRA * _Point));
                m_trade.PositionModify(ticket, novoSL, PositionGetDouble(POSITION_TP));
             }
          }
@@ -1045,8 +1053,8 @@ void GerenciarTrailingStop()
             if(precoAtual < gatilhoStart) continue; 
 
             // 2. Cálculo da DISTÂNCIA (Trailing) em %
-            double novoSL = NormalizeDouble(precoAtual * (1.0 - (trailing_alta / 100.0)), _Digits);
-            
+            double novoSL = NormalizarPreco(precoAtual * (1.0 - (trailing_alta / 100.0)));
+
             // 3. Só modifica se o novo SL for maior que o atual (sempre subindo)
             if(novoSL > slAtual || slAtual == 0)
             {
@@ -1058,12 +1066,12 @@ void GerenciarTrailingStop()
          {
             // 1. Verificação do GATILHO (Start) em %
             double gatilhoStart = precoAbertura * (1.0 - (TRAILING_START / 100.0));
-            
+
             // Se o preço ainda não chegou no Start, pula
             if(precoAtual > gatilhoStart) continue;
 
             // 2. Cálculo da DISTÂNCIA (Trailing) em %
-            double novoSL = NormalizeDouble(precoAtual * (1.0 + (trailing_queda / 100.0)), _Digits);
+            double novoSL = NormalizarPreco(precoAtual * (1.0 + (trailing_queda / 100.0)));
             
             // 3. Só modifica se o novo SL for menor que o atual (sempre descendo)
             if(novoSL < slAtual || slAtual == 0)
@@ -1543,6 +1551,16 @@ else if(reason == "invalid_key")
 
 else if(reason == "not_found")
    reason = "Licença não encontrada";
+
+else if(reason == "rate_limit")
+{
+   reason = "Limite de requisições";
+   // Rate limit: mantém a licença válida e aguarda próxima janela
+   Print("Rate limit atingido — mantendo licença válida até próxima verificação.");
+   g_licenseStatus = "✔ Ativa (rate limit)";
+   g_licenseColor  = clrYellow;
+   return license_valid; // mantém o estado anterior
+}
 
 // 🔹 Atualiza painel
 g_licensePlan = "---";
