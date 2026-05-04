@@ -1658,11 +1658,11 @@ ObjectSetInteger(0, "SLYBOT_LOGO", OBJPROP_COLOR, clrNONE);
    // Título
    ObjectCreate(0, "LBL_TITLE", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_CORNER, PANEL_CORNER);
-   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_XDISTANCE, 150);
+   ObjectSetInteger(0, "LBL_TITLE", OBJPROP_XDISTANCE, 105);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_YDISTANCE, 60);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, "LBL_TITLE", OBJPROP_FONTSIZE, 13);
-   ObjectSetString(0, "LBL_TITLE", OBJPROP_TEXT, "v1.0");
+   ObjectSetString(0, "LBL_TITLE", OBJPROP_TEXT, "STATS");
    
    
    // ================= RESULTADO DIA NO HEADER =================
