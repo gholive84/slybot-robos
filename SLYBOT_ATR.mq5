@@ -84,9 +84,6 @@ input double       saldo_por_lots          = 1000;        // Gestão Automática
 input double       lots_maximo             = 1000;        // Lote Máximo ( "0" = desabilitado)
 input double       loss                    = 50000;       // Loss diário de segurança
 
-input group "Identificação -----------------------------------";
-input string nomeEstrategia = "";                  // Nome da Estratégia
-
 input group "Parâmetros ------------------------------";
 input ENUM_TIMEFRAMES mm_tempo_grafico     = PERIOD_CURRENT; // Tempo gráfico
 input ulong        magicNumber             = 100002;     // Magic Number
@@ -408,6 +405,7 @@ void GerenciarPosicoesAtivas()
 
 void GerenciarHorarios()
 {
+   if(!g_botLigado) return;
    datetime timeNow = TimeCurrent();
    MqlDateTime tm;
    TimeToStruct(timeNow, tm);
@@ -1967,7 +1965,7 @@ else
    // =========================
    // TEXTOS BODY
    // =========================
-   ObjectSetString(0,"LBL_NOME_ESTRATEGIA", OBJPROP_TEXT, nomeEstrategia != "" ? nomeEstrategia : "---");
+   ObjectSetString(0,"LBL_NOME_ESTRATEGIA", OBJPROP_TEXT, nome_estrategia != "" ? nome_estrategia : "---");
    ObjectSetString(0,"LBL_PLANO",  OBJPROP_TEXT, "Plano: "  + g_licensePlan);
    ObjectSetString(0,"LBL_STATUS", OBJPROP_TEXT, "Status: " + g_licenseStatus);
    ObjectSetString(0,"LBL_EXPIRA", OBJPROP_TEXT, "Expira: " + g_licenseExpiration);
